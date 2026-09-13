@@ -7,6 +7,7 @@ import morgan from "morgan";
 import routes from "./routes/index.js";
 import corsOptions from "./config/cors.js";
 import errorMiddleware from "./middleware/error.middleware.js";
+import { keepAliveService } from "./services/keepAlive.service.js";
 
 const app = express();
 
@@ -26,6 +27,26 @@ app.use(
     limit: "20mb",
   })
 );
+
+// Reset 12-minute idle keep-alive timer on any inbound route call
+app.use((req, res, next) => {
+  if (!req.headers["x-keep-alive"]) {
+    keepAliveService.recordActivity(`HTTP ${req.method} ${req.path}`);
+  }
+  next();
+});
+
+// ==========================
+// Health check / Keep-alive Ping
+// ==========================
+
+app.get(["/", "/health"], (req, res) => {
+  return res.status(200).json({
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
 
 // ==========================
 // Routes
