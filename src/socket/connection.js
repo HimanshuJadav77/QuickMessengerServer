@@ -24,6 +24,7 @@ import {
   handleCallEnded,
   handleGetAgoraToken,
 } from "./call.events.js";
+import { handleSyncMessages } from "./offline-sync.js";
 import { keepAliveService } from "../services/keepAlive.service.js";
 
 const registerConnectionHandler = (io) => {
