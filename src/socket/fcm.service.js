@@ -49,27 +49,45 @@ export const sendFCMToUser = async (userId, payload) => {
       }
     }
 
+    const isCall = payload.type === "incoming_call";
+    const notificationTitle = isCall ? (payload.title || "Incoming Call") : senderName;
+    const notificationBody = payload.body || (isCall ? `${senderName} is calling...` : "Sent a message");
+
+    const dataPayload = isCall
+      ? {
+          type: "incoming_call",
+          callId: String(payload.callId || ""),
+          callerId: String(payload.callerId || payload.senderId || ""),
+          callerName: String(payload.callerName || senderName),
+          callerImageUrl: String(payload.callerImageUrl || senderAvatarUrl),
+          channelId: String(payload.channelId || ""),
+          callType: String(payload.callType || "audio"),
+          token: String(payload.token || ""),
+          appId: String(payload.appId || ""),
+        }
+      : {
+          type: String(payload.type || "chat_message"),
+          conversationId: String(payload.conversationId || ""),
+          messageId: String(payload.messageId || ""),
+          senderId: String(payload.senderId || ""),
+          senderName: String(senderName),
+          senderAvatarUrl: String(senderAvatarUrl),
+          senderAbout: String(senderAbout),
+          senderEmail: String(senderEmail),
+        };
+
     const multicastMessage = {
       tokens: fcmTokens,
       notification: {
-        title: senderName,
-        body: payload.body || "Sent a message",
+        title: notificationTitle,
+        body: notificationBody,
       },
-      data: {
-        type: "chat_message",
-        conversationId: String(payload.conversationId || ""),
-        messageId: String(payload.messageId || ""),
-        senderId: String(payload.senderId || ""),
-        senderName: String(senderName),
-        senderAvatarUrl: String(senderAvatarUrl),
-        senderAbout: String(senderAbout),
-        senderEmail: String(senderEmail),
-      },
+      data: dataPayload,
       android: {
         priority: "high",
         notification: {
           sound: "default",
-          channelId: "high_importance_channel",
+          channelId: isCall ? "call_channel" : "high_importance_channel",
         },
       },
       apns: {

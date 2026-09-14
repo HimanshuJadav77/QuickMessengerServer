@@ -1,6 +1,7 @@
 import pkg from "agora-token";
 const { RtcTokenBuilder, RtcRole } = pkg;
 import { broadcastToUser, userHasSockets } from "./users.manager.js";
+import { sendFCMToUser } from "./fcm.service.js";
 
 const AGORA_APP_ID = process.env.AGORA_APP_ID;
 const AGORA_APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE;
@@ -41,7 +42,7 @@ export const generateAgoraToken = (channelName, uid = 0) => {
   );
 };
 
-export const handleCallOffer = (socket, data) => {
+export const handleCallOffer = async (socket, data) => {
   const callerId = socket.user?.uid;
   const { receiverId } = data;
 
@@ -60,11 +61,6 @@ export const handleCallOffer = (socket, data) => {
     return;
   }
 
-  if (!userHasSockets(receiverId)) {
-    socket.emit("call_error", { message: "Receiver is not connected.", code: "RECEIVER_OFFLINE" });
-    return;
-  }
-
   const channelId = data.channelId || `call_${callerId}_${Date.now()}`;
   const token = generateAgoraToken(channelId, 0);
 
@@ -76,7 +72,30 @@ export const handleCallOffer = (socket, data) => {
     appId: AGORA_APP_ID,
   };
 
-  broadcastToUser(receiverId, "call_offer", callData);
+  const isOnline = userHasSockets(receiverId);
+  if (isOnline) {
+    broadcastToUser(receiverId, "call_offer", callData);
+  }
+
+  // Send high-priority FCM wakeup so recipient gets alerted even if offline, backgrounded, or phone locked
+  try {
+    await sendFCMToUser(receiverId, {
+      type: "incoming_call",
+      title: "Incoming Call",
+      body: `${data.callerName || "Someone"} is calling...`,
+      callId: data.callId || channelId,
+      callerId,
+      callerName: data.callerName || "Someone",
+      callerImageUrl: data.callerAvatar || "",
+      channelId,
+      callType: data.callType || "audio",
+      token,
+      appId: AGORA_APP_ID,
+    });
+  } catch (err) {
+    console.warn("[CallEvents] Failed to send call FCM wakeup:", err.message);
+  }
+
   socket.emit("call_token_ready", callData);
 };
 
