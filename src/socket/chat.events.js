@@ -1,8 +1,50 @@
+import { db } from "../config/firebase.js";
 import { ChatService } from "../services/chat.service.js";
 import { getConversationId, authorizeConversationJoin } from "./conversation.identity.js";
 import { broadcastToUser, userHasSockets, isUserViewingConversation } from "./users.manager.js";
 import { sendFCMToUser } from "./fcm.service.js";
 import { checkSocketRateLimit } from "../middleware/rateLimit.middleware.js";
+
+// In-memory cache for user profile metadata (5 min TTL) to avoid repeated Firestore reads
+const senderProfileCache = new Map();
+
+async function getSenderProfile(senderId, fallbackData = {}) {
+  let senderName = fallbackData.senderName || fallbackData.participantName || "";
+  let senderAvatarUrl = fallbackData.senderAvatarUrl || fallbackData.participantImageUrl || "";
+
+  if (senderName && senderName !== "User") {
+    senderProfileCache.set(senderId, {
+      name: senderName,
+      avatar: senderAvatarUrl,
+      expiresAt: Date.now() + 5 * 60 * 1000,
+    });
+    return { senderName, senderAvatarUrl };
+  }
+
+  const cached = senderProfileCache.get(senderId);
+  if (cached && Date.now() < cached.expiresAt) {
+    return { senderName: cached.name, senderAvatarUrl: cached.avatar };
+  }
+
+  try {
+    const userDoc = await db.collection("Users").doc(senderId).get();
+    if (userDoc.exists) {
+      const uData = userDoc.data() || {};
+      senderName = uData.username || uData.name || "User";
+      senderAvatarUrl = uData.userimageurl || uData.imageurl || "";
+      senderProfileCache.set(senderId, {
+        name: senderName,
+        avatar: senderAvatarUrl,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      });
+      return { senderName, senderAvatarUrl };
+    }
+  } catch (err) {
+    console.warn("Could not fetch sender metadata:", err.message);
+  }
+
+  return { senderName: senderName || "User", senderAvatarUrl: senderAvatarUrl || "" };
+}
 
 /**
  * Handle incoming send_message event from Flutter client
@@ -71,7 +113,10 @@ export const handleSendMessage = async (socket, data) => {
       clientCreatedAt: message.clientCreatedAt,
     });
 
-    // 3. Evaluate recipient active status & conversation focus
+    // 3. Resolve sender profile details (for instant display on receiver UI)
+    const { senderName, senderAvatarUrl } = await getSenderProfile(senderId, data);
+
+    // 4. Evaluate recipient active status & conversation focus
     const isReceiverOnline = userHasSockets(receiverId);
     const isReceiverViewingThisConv = isUserViewingConversation(receiverId, conversationId);
 
@@ -80,6 +125,8 @@ export const handleSendMessage = async (socket, data) => {
       conversationId,
       senderId,
       receiverId,
+      senderName,
+      senderAvatarUrl,
       type,
       text,
       replyToMessageId,
@@ -96,21 +143,25 @@ export const handleSendMessage = async (socket, data) => {
       // If receiver is online but not actively focused on this specific chat, send FCM notification as well
       if (!isReceiverViewingThisConv) {
         await sendFCMToUser(receiverId, {
-          title: "New Message",
+          title: senderName || "New Message",
           body: text || "Sent a message",
           conversationId,
           messageId,
           senderId,
+          senderName,
+          senderAvatarUrl,
         });
       }
     } else {
       // Recipient is offline -> FCM Push notification
       await sendFCMToUser(receiverId, {
-        title: "New Message",
+        title: senderName || "New Message",
         body: text || "Sent a message",
         conversationId,
         messageId,
         senderId,
+        senderName,
+        senderAvatarUrl,
       });
     }
   } catch (error) {
