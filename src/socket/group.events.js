@@ -91,7 +91,7 @@ export const handleSendGroupMessage = async (socket, data) => {
     console.error("Error in handleSendGroupMessage:", error);
     socket.emit("error_event", {
       success: false,
-      code: "GROUP_MESSAGE_FAILED",
+      code: error.code || "GROUP_MESSAGE_FAILED",
       message: error.message || "Failed to send group message",
     });
   }

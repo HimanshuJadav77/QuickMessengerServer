@@ -16,6 +16,7 @@ export class GroupService {
         description,
         imageUrl,
         createdBy,
+        memberUids: allMemberUids,
         createdAt: FieldValue.serverTimestamp(),
         memberCount: allMemberUids.length,
         updatedAt: FieldValue.serverTimestamp(),
@@ -65,6 +66,7 @@ export class GroupService {
 
       await groupRef.update({
         memberCount: FieldValue.increment(1),
+        memberUids: FieldValue.arrayUnion(memberUid),
         updatedAt: FieldValue.serverTimestamp(),
       });
 
@@ -94,6 +96,7 @@ export class GroupService {
       await groupRef.collection("members").doc(memberUid).delete();
       await groupRef.update({
         memberCount: FieldValue.increment(-1),
+        memberUids: FieldValue.arrayRemove(memberUid),
         updatedAt: FieldValue.serverTimestamp(),
       });
 
@@ -134,6 +137,15 @@ export class GroupService {
   static async sendGroupMessage({ messageId, groupId, senderId, senderName, type = "text", text, clientCreatedAt }) {
     try {
       const groupRef = db.collection("groups").doc(groupId);
+
+      // Verify sender is an active member of this group
+      const memberDoc = await groupRef.collection("members").doc(senderId).get();
+      if (!memberDoc.exists) {
+        const err = new Error("FORBIDDEN: You are not a member of this group");
+        err.code = "NOT_A_GROUP_MEMBER";
+        throw err;
+      }
+
       const messageRef = groupRef.collection("messages").doc(messageId);
 
       const messageData = {
