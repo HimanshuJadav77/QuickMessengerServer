@@ -314,6 +314,7 @@ export const handleMarkRead = async (socket, data) => {
       broadcastToUser(targetSenderId, "read_receipt", {
         conversationId,
         readBy: userId,
+        readAt: new Date().toISOString(),
       });
     }
   } catch (error) {

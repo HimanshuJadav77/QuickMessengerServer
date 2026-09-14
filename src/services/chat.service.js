@@ -259,6 +259,51 @@ export class ChatRepository {
         },
         { merge: true }
       );
+
+      // Identify the other participant whose messages were read
+      const parts = conversationId.replace("conv_", "").split("_");
+      const otherUserId = parts.find((id) => id !== userId);
+
+      if (otherUserId) {
+        // Find unread messages sent by the other participant
+        const unreadSnap = await convRef
+          .collection("messages")
+          .where("senderId", "==", otherUserId)
+          .where("status", "in", ["sent", "delivered"])
+          .limit(100)
+          .get();
+
+        if (!unreadSnap.empty) {
+          const batch = db.batch();
+          unreadSnap.docs.forEach((doc) => {
+            batch.update(doc.ref, {
+              status: "read",
+              readAt: FieldValue.serverTimestamp(),
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+
+            // Update legacy save_chat sync records
+            const senderSaveChatRef = db
+              .collection("Users")
+              .doc(otherUserId)
+              .collection("save_chat")
+              .doc(userId)
+              .collection("messages")
+              .doc(doc.id);
+            const receiverSaveChatRef = db
+              .collection("Users")
+              .doc(userId)
+              .collection("save_chat")
+              .doc(otherUserId)
+              .collection("messages")
+              .doc(doc.id);
+
+            batch.set(senderSaveChatRef, { messagestate: "seen" }, { merge: true });
+            batch.set(receiverSaveChatRef, { messagestate: "seen" }, { merge: true });
+          });
+          await batch.commit();
+        }
+      }
     } catch (error) {
       console.error(`Error marking conversation ${conversationId} as read by ${userId}:`, error);
     }
