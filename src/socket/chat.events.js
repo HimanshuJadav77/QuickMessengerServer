@@ -1,7 +1,8 @@
 import { ChatService } from "../services/chat.service.js";
-import { getConversationId } from "./conversation.identity.js";
+import { getConversationId, authorizeConversationJoin } from "./conversation.identity.js";
 import { broadcastToUser, userHasSockets, isUserViewingConversation } from "./users.manager.js";
 import { sendFCMToUser } from "./fcm.service.js";
+import { checkSocketRateLimit } from "../middleware/rateLimit.middleware.js";
 
 /**
  * Handle incoming send_message event from Flutter client
@@ -13,6 +14,15 @@ export const handleSendMessage = async (socket, data) => {
       success: false,
       code: "UNAUTHORIZED",
       message: "Socket user not authenticated",
+    });
+  }
+
+  // Rate limiting check
+  if (!checkSocketRateLimit(senderId).allowed) {
+    return socket.emit("error_event", {
+      success: false,
+      code: "RATE_LIMIT_EXCEEDED",
+      message: "Too many messages sent. Please slow down.",
     });
   }
 
@@ -122,6 +132,23 @@ export const handleEditMessage = async (socket, data) => {
 
   if (!messageId || !conversationId || !newText || !userId) return;
 
+  const authCheck = authorizeConversationJoin(socket, conversationId);
+  if (!authCheck.valid) {
+    return socket.emit("error_event", {
+      success: false,
+      code: "UNAUTHORIZED",
+      message: authCheck.reason,
+    });
+  }
+
+  if (!checkSocketRateLimit(userId).allowed) {
+    return socket.emit("error_event", {
+      success: false,
+      code: "RATE_LIMIT_EXCEEDED",
+      message: "Too many edit requests. Please slow down.",
+    });
+  }
+
   try {
     const result = await ChatService.editMessage(conversationId, messageId, newText, userId);
 
@@ -158,6 +185,11 @@ export const handleToggleReaction = async (socket, data) => {
 
   if (!messageId || !conversationId || !emoji || !userId) return;
 
+  const authCheck = authorizeConversationJoin(socket, conversationId);
+  if (!authCheck.valid) return;
+
+  if (!checkSocketRateLimit(userId, 60).allowed) return;
+
   try {
     const result = await ChatService.toggleReaction(conversationId, messageId, emoji, userId);
 
@@ -188,6 +220,9 @@ export const handleMessageDelivered = async (socket, data) => {
 
   if (!messageId || !conversationId) return;
 
+  const authCheck = authorizeConversationJoin(socket, conversationId);
+  if (!authCheck.valid) return;
+
   try {
     await ChatService.updateMessageStatus(conversationId, messageId, "delivered");
 
@@ -215,6 +250,9 @@ export const handleMarkRead = async (socket, data) => {
 
   if (!conversationId) return;
 
+  const authCheck = authorizeConversationJoin(socket, conversationId);
+  if (!authCheck.valid) return;
+
   try {
     await ChatService.markConversationAsRead(conversationId, userId);
 
@@ -241,6 +279,15 @@ export const handleDeleteForMe = async (socket, data) => {
 
   if (!messageId || !conversationId || !userId) return;
 
+  const authCheck = authorizeConversationJoin(socket, conversationId);
+  if (!authCheck.valid) {
+    return socket.emit("error_event", {
+      success: false,
+      code: "UNAUTHORIZED",
+      message: authCheck.reason,
+    });
+  }
+
   try {
     await ChatService.deleteForMe(conversationId, messageId, userId);
     socket.emit("message_deleted_for_me", {
@@ -266,6 +313,15 @@ export const handleDeleteForEveryone = async (socket, data) => {
   const { conversationId, messageId, receiverId } = data || {};
 
   if (!messageId || !conversationId || !userId) return;
+
+  const authCheck = authorizeConversationJoin(socket, conversationId);
+  if (!authCheck.valid) {
+    return socket.emit("error_event", {
+      success: false,
+      code: "UNAUTHORIZED",
+      message: authCheck.reason,
+    });
+  }
 
   try {
     const result = await ChatService.deleteForEveryone(conversationId, messageId, userId);

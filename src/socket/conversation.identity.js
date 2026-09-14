@@ -19,32 +19,31 @@ export function generateConversationId(userId1, userId2) {
   return getConversationId(userId1, userId2);
 }
 
-/**
- * Validate that an authenticated user is a participant of a conversation.
- * @param {object} socket - Authenticated Socket.IO socket
- * @param {string} conversationId - Target conversation ID
- * @returns {{valid: boolean, reason?: string}}
- */
 export function authorizeConversationJoin(socket, conversationId) {
   const userId = socket.user?.uid;
   if (!userId) {
     return { valid: false, reason: "User not authenticated" };
   }
 
-  if (!conversationId || !conversationId.startsWith("conv_")) {
-    return { valid: false, reason: "Invalid conversation ID format" };
+  if (!conversationId) {
+    return { valid: false, reason: "Conversation ID missing" };
   }
 
-  // Format: conv_userA_userB
-  const parts = conversationId.split("_");
-  if (parts.length < 3) {
-    return { valid: false, reason: "Conversation ID malformed" };
+  // Handle group chats
+  if (conversationId.startsWith("group_")) {
+    return { valid: true };
   }
 
-  const participantA = parts[1];
-  const participantB = parts.slice(2).join("_"); // handle uids with underscores if any
+  // Handle direct 1-on-1 conversations (conv_uidA_uidB or uidA_uidB)
+  const cleanId = conversationId.startsWith("conv_")
+    ? conversationId.slice(5)
+    : conversationId;
 
-  const isParticipant = userId === participantA || userId === participantB;
+  const isParticipant =
+    cleanId.startsWith(`${userId}_`) ||
+    cleanId.endsWith(`_${userId}`) ||
+    cleanId.includes(`_${userId}_`) ||
+    cleanId === userId;
 
   return {
     valid: isParticipant,

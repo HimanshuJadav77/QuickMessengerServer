@@ -2,8 +2,8 @@ import pkg from "agora-token";
 const { RtcTokenBuilder, RtcRole } = pkg;
 import { broadcastToUser, userHasSockets } from "./users.manager.js";
 
-const AGORA_APP_ID = process.env.AGORA_APP_ID || "fc8b32bf5a0c426f9e0d0b144aa94a67";
-const AGORA_APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE || "ec657109a0e241c8a65c7473f176c172";
+const AGORA_APP_ID = process.env.AGORA_APP_ID;
+const AGORA_APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE;
 
 let currentMonthKey = `${new Date().getFullYear()}-${new Date().getMonth() + 1}`;
 let monthlyUsageSeconds = 0;
@@ -25,6 +25,9 @@ export const checkMonthlyQuota = () => {
 };
 
 export const generateAgoraToken = (channelName, uid = 0) => {
+  if (!AGORA_APP_ID || !AGORA_APP_CERTIFICATE) {
+    throw new Error("AGORA_APP_ID and AGORA_APP_CERTIFICATE environment variables are required.");
+  }
   const role = RtcRole.PUBLISHER;
   const privilegeExpiredTs = Math.floor(Date.now() / 1000) + 86400; // 24 hours
   return RtcTokenBuilder.buildTokenWithUid(
