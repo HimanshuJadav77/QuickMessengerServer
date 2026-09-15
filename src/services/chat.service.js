@@ -261,8 +261,12 @@ export class ChatRepository {
       );
 
       // Identify the other participant whose messages were read
-      const parts = conversationId.replace("conv_", "").split("_");
-      const otherUserId = parts.find((id) => id !== userId);
+      const clean = conversationId.replace("conv_", "");
+      const otherUserId = clean.startsWith(`${userId}_`)
+        ? clean.slice(userId.length + 1)
+        : clean.endsWith(`_${userId}`)
+        ? clean.slice(0, clean.length - userId.length - 1)
+        : null;
 
       if (otherUserId) {
         // Find unread messages sent by the other participant

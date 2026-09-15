@@ -134,7 +134,11 @@ export const handleCallRejected = (socket, data) => {
 
 export const handleCallEnded = (socket, data) => {
   const userId = socket.user?.uid;
-  const otherUserId = data.otherUserId || data.callerId || data.receiverId;
+  const otherUserId =
+    data.otherUserId ||
+    (userId && data.callerId && userId === data.callerId
+      ? data.receiverId
+      : data.callerId || data.receiverId);
 
   if (data.durationSeconds) {
     monthlyUsageSeconds += Number(data.durationSeconds);

@@ -1,6 +1,7 @@
 import { GroupService } from "../services/group.service.js";
 import { broadcastToUser, userHasSockets } from "./users.manager.js";
 import { sendFCMToUser } from "./fcm.service.js";
+import { checkSocketRateLimit } from "../middleware/rateLimit.middleware.js";
 
 export const handleCreateGroup = async (socket, data) => {
   const userId = socket.user?.uid;
@@ -11,6 +12,14 @@ export const handleCreateGroup = async (socket, data) => {
       success: false,
       code: "INVALID_GROUP_PAYLOAD",
       message: "groupId and name are required",
+    });
+  }
+
+  if (!checkSocketRateLimit(userId, 20).allowed) {
+    return socket.emit("error_event", {
+      success: false,
+      code: "RATE_LIMIT_EXCEEDED",
+      message: "Too many group actions. Please slow down.",
     });
   }
 
@@ -50,6 +59,14 @@ export const handleSendGroupMessage = async (socket, data) => {
       success: false,
       code: "INVALID_GROUP_MESSAGE_PAYLOAD",
       message: "messageId and groupId are required",
+    });
+  }
+
+  if (!checkSocketRateLimit(senderId).allowed) {
+    return socket.emit("error_event", {
+      success: false,
+      code: "RATE_LIMIT_EXCEEDED",
+      message: "Too many messages sent. Please slow down.",
     });
   }
 

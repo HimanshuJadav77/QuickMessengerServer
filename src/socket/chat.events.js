@@ -277,8 +277,14 @@ export const handleMessageDelivered = async (socket, data) => {
   try {
     await ChatService.updateMessageStatus(conversationId, messageId, "delivered");
 
-    const parts = conversationId.replace("conv_", "").split("_");
-    const targetSenderId = senderId || parts.find((id) => id !== userId);
+    const clean = conversationId.replace("conv_", "");
+    const targetSenderId =
+      senderId ||
+      (clean.startsWith(`${userId}_`)
+        ? clean.slice(userId.length + 1)
+        : clean.endsWith(`_${userId}`)
+        ? clean.slice(0, clean.length - userId.length - 1)
+        : null);
 
     if (targetSenderId) {
       broadcastToUser(targetSenderId, "message_delivered", {
@@ -307,8 +313,14 @@ export const handleMarkRead = async (socket, data) => {
   try {
     await ChatService.markConversationAsRead(conversationId, userId);
 
-    const parts = conversationId.replace("conv_", "").split("_");
-    const targetSenderId = senderId || parts.find((id) => id !== userId);
+    const clean = conversationId.replace("conv_", "");
+    const targetSenderId =
+      senderId ||
+      (clean.startsWith(`${userId}_`)
+        ? clean.slice(userId.length + 1)
+        : clean.endsWith(`_${userId}`)
+        ? clean.slice(0, clean.length - userId.length - 1)
+        : null);
 
     if (targetSenderId) {
       broadcastToUser(targetSenderId, "read_receipt", {
